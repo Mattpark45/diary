@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>행복한 일기</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/quill/1.3.7/quill.snow.min.css" rel="stylesheet">
+    <style>
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+        }
+        .modal-content {
+            background-color: white;
+            margin: 15% auto;
+            padding: 20px;
+            width: 80%;
+            max-width: 600px;
+            border-radius: 8px;
+        }
+        .ql-editor {
+            min-height: 200px;
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+    <div class="container mx-auto px-4 py-8">
+        <h1 class="text-4xl font-bold text-center text-indigo-600 mb-8">행복한 일기</h1>
+        
+        <!-- 일기 작성 폼 -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+            <input type="text" id="diaryTitle" placeholder="제목을 입력하세요" 
+                   class="w-full mb-4 p-2 border rounded focus:outline-none focus:border-indigo-500">
+            <div id="editor" class="mb-4"></div>
+            <button id="saveButton" 
+                    class="bg-indigo-600 text-white px-6 py-2 rounded hover:bg-indigo-700 transition-colors">
+                저장하기
+            </button>
+        </div>
+
+        <!-- 일기 목록 -->
+        <div id="diaryList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <!-- 일기 카드들이 여기에 추가됨 -->
+        </div>
+    </div>
+
+    <!-- 모달 팝업 -->
+    <div id="diaryModal" class="modal">
+        <div class="modal-content">
+            <h2 id="modalTitle" class="text-2xl font-bold mb-4"></h2>
+            <div id="modalContent" class="mb-4"></div>
+            <div id="modalDate" class="text-gray-500 mb-4"></div>
+            <button onclick="closeModal()" 
+                    class="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700 transition-colors">
+                닫기
+            </button>
+        </div>
+    </div>
+
+    <!-- Quill 에디터 스크립트 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/quill/1.3.7/quill.min.js"></script>
+    
+    <!-- Firebase 관련 스크립트 -->
+    <script type="module">
+        // Firebase 관련 모듈 import
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js";
+        import { 
+            getFirestore, 
+            collection, 
+            addDoc, 
+            getDocs, 
+            query, 
+            orderBy 
+        } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
+
+        // Firebase 구성
+        const firebaseConfig = {
+            apiKey: "AIzaSyBraf52gBKLi859G_FbSwCUyC4r7VB8xjo",
+            authDomain: "coloso-sample.firebaseapp.com",
+            projectId: "coloso-sample",
+            storageBucket: "coloso-sample.firebasestorage.app",
+            messagingSenderId: "833497444819",
+            appId: "1:833497444819:web:dec705df7486263a15bf26"
+        };
+
+        // Firebase 초기화
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        // Quill 에디터 초기화
+        const quill = new Quill('#editor', {
+            theme: 'snow',
+            placeholder: '오늘의 이야기를 적어보세요...',
+            modules: {
+                toolbar: [
+                    ['bold', 'italic', 'underline'],
+                    [{ 'list': 'ordered'}, { 'list': 'bullet' }],
+                    ['clean']
+                ]
+            }
+        });
+
+        // 일기 저장 함수
+        async function saveDiary() {
+            const title = document.getElementById('diaryTitle').value;
+            const content = quill.root.innerHTML;
+            
+            if (!title || !content) {
+                alert('제목과 내용을 모두 입력해주세요!');
+                return;
+            }
+
+            try {
+                // Firestore에 데이터 저장
+                const docRef = await addDoc(collection(db, "diaries"), {
+                    title: title,
+                    content: content,
+                    date: new Date().toISOString(),
+                    timestamp: new Date()
+                });
+
+                // 입력 폼 초기화
+                document.getElementById('diaryTitle').value = '';
+                quill.setContents([]);
+
+                // 일기 목록 새로고침
+                await displayDiaries();
+                
+                alert('일기가 저장되었습니다!');
+            } catch (e) {
+                console.error("Error adding document: ", e);
+                alert('저장 중 오류가 발생했습니다.');
+            }
+        }
+
+        // 일기 목록 표시 함수
+        async function displayDiaries() {
+            const diaryList = document.getElementById('diaryList');
+            diaryList.innerHTML = '';
+
+            try {
+                // timestamp 기준으로 내림차순 정렬하여 가져오기
+                const q = query(collection(db, "diaries"), orderBy("timestamp", "desc"));
+                const querySnapshot = await getDocs(q);
+
+                querySnapshot.forEach((doc) => {
+                    const diary = doc.data();
+                    const date = new Date(diary.date).toLocaleDateString('ko-KR');
+                    
+                    const card = document.createElement('div');
+                    card.className = 'bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow cursor-pointer';
+                    card.innerHTML = `
+                        <h3 class="text-xl font-semibold mb-2">${diary.title}</h3>
+                        <p class="text-gray-500">${date}</p>
+                    `;
+                    card.onclick = () => showDiary(diary);
+                    diaryList.appendChild(card);
+                });
+            } catch (e) {
+                console.error("Error getting documents: ", e);
+                alert('일기 목록을 불러오는 중 오류가 발생했습니다.');
+            }
+        }
+
+        // 일기 상세 보기 함수
+        function showDiary(diary) {
+            document.getElementById('modalTitle').textContent = diary.title;
+            document.getElementById('modalContent').innerHTML = diary.content;
+            document.getElementById('modalDate').textContent = 
+                new Date(diary.date).toLocaleDateString('ko-KR');
+            document.getElementById('diaryModal').style.display = 'block';
+        }
+
+        // 모달 닫기 함수
+        function closeModal() {
+            document.getElementById('diaryModal').style.display = 'none';
+        }
+
+        // 이벤트 리스너 등록
+        document.getElementById('saveButton').addEventListener('click', saveDiary);
+        
+        // 모달 외부 클릭 시 닫기
+        window.onclick = function(event) {
+            const modal = document.getElementById('diaryModal');
+            if (event.target == modal) {
+                modal.style.display = 'none';
+            }
+        }
+
+        // closeModal 함수를 전역으로 노출
+        window.closeModal = closeModal;
+
+        // 초기 일기 목록 표시
+        displayDiaries();
+    </script>
+</body>
+</html>
